@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Master v2.0 - Пиксельный Мастер</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --bg-primary: #f9fafb;
+            --bg-secondary: #ffffff;
+            --text-primary: #1f2937;
+            --text-secondary: #6b7280;
+            --border-color: #e5e7eb;
+        }
+
+        [data-theme="dark"] {
+            --bg-primary: #1f2937;
+            --bg-secondary: #374151;
+            --text-primary: #f9fafb;
+            --text-secondary: #d1d5db;
+            --border-color: #4b5563;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            transition: all 0.3s ease;
+        }
+
+        .card {
+            background-color: var(--bg-secondary);
+            transition: all 0.3s ease;
+        }
+
+        .cell {
+            transition: all 0.1s ease;
+            cursor: pointer;
+        }
+        .cell:hover {
+            transform: scale(1.1);
+            border-color: #3b82f6 !important;
+        }
+        .cell:active {
+            transform: scale(0.95);
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .animate-pulse-custom {
+            animation: pulse 2s infinite;
+        }
+
+        /* Volume slider styling */
+        input[type="range"] {
+            width: 120px;
+            height: 6px;
+            border-radius: 5px;
+            background: #d1d5db;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+
+    <script>
+        // Game State
+        let gameState = {
+            currentStage: 1,
+            totalStages: 400,
+            grid: [],
+            targetGrid: [],
+            selectedColor: '#FF6B6B',
+            moves: 0,
+            score: 0,
+            completed: false,
+            showTarget: true,
+            soundEnabled: true,
+            musicEnabled: true,
+            darkMode: false,
+            musicVolume: 20, // 0-100
+            soundVolume: 50, // 0-100
+            audioContext: null,
+            backgroundMusic: null
+        };
+
+        // Audio Setup
+        const initAudio = () => {
+            gameState.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        };
+
+        const colorFrequencies = {
+            '#FF6B6B': 523.25, '#4ECDC4': 587.33, '#45B7D1': 659.25,
+            '#FFA07A': 698.46, '#98D8C8': 783.99, '#F7DC6F': 880.00,
+            '#BB8FCE': 987.77, '#85C1E2': 1046.50, '#F8B195': 554.37,
+            '#C06C84': 622.25, '#6C5B7B': 739.99, '#355C7D': 830.61,
+            '#E74C3C': 932.33, '#3498DB': 1108.73, '#2ECC71': 1174.66,
+            '#F39C12': 1318.51, '#9B59B6': 1396.91, '#1ABC9C': 1567.98,
+            '#E67E22': 1760.00, '#95A5A6': 1975.53, '#FFFFFF': 440.00
+        };
+
+        const allColors = [
+            '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A',
+            '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2',
+            '#F8B195', '#C06C84', '#6C5B7B', '#355C7D',
+            '#E74C3C', '#3498DB', '#2ECC71', '#F39C12',
+            '#9B59B6', '#1ABC9C', '#E67E22', '#95A5A6'
+        ];
+
+        // Play color sound - INGICHKA NOTA
+        const playColorSound = (color) => {
+            if (!gameState.audioContext || !gameState.soundEnabled) return;
+
+            const frequency = colorFrequencies[color] || 440;
+            const oscillator = gameState.audioContext.createOscillator();
+            const gainNode = gameState.audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(gameState.audioContext.destination);
+
+            oscillator.type = 'sine'; // Ingichka tovush
+            oscillator.frequency.value = frequency + 200; // Balandroq nota
+
+            const volume = gameState.soundVolume / 100 * 0.08;
+            gainNode.gain.value = volume;
+            gainNode.gain.exponentialRampToValueAtTime(0.001, gameState.audioContext.currentTime + 0.1);
+
+            oscillator.start();
+            oscillator.stop(gameState.audioContext.currentTime + 0.1);
+        };
+
+        // Success sound - ingichka bells
+        const playSuccessSound = () => {
+            if (!gameState.audioContext || !gameState.soundEnabled) return;
+
+            const notes = [1046.50, 1318.51, 1567.98, 2093.00]; // Yuqori notalar
+            notes.forEach((freq, i) => {
+                setTimeout(() => {
+                    const osc = gameState.audioContext.createOscillator();
+                    const gain = gameState.audioContext.createGain();
+
+                    osc.connect(gain);
+                    gain.connect(gameState.audioContext.destination);
+
+                    osc.frequency.value = freq;
+                    osc.type = 'sine';
+
+                    const volume = gameState.soundVolume / 100 * 0.1;
+                    gain.gain.value = volume;
+                    gain.gain.exponentialRampToValueAtTime(0.001, gameState.audioContext.currentTime + 0.25);
+
+                    osc.start();
+                    osc.stop(gameState.audioContext.currentTime + 0.25);
+                }, i * 80);
+            });
+        };
+
+        // Level up sound - celebration
+        const playLevelUpSound = () => {
+            if (!gameState.audioContext || !gameState.soundEnabled) return;
+
+            const notes = [1046.50, 1318.51, 1567.98, 2093.00, 2637.02];
+            notes.forEach((freq, i) => {
+                setTimeout(() => {
+                    const osc = gameState.audioContext.createOscillator();
+                    const gain = gameState.audioContext.createGain();
+
+                    osc.connect(gain);
+                    gain.connect(gameState.audioContext.destination);
+
+                    osc.frequency.value = freq;
+                    osc.type = 'triangle';
+
+                    const volume = gameState.soundVolume / 100 * 0.12;
+                    gain.gain.value = volume;
+                    gain.gain.exponentialRampToValueAtTime(0.001, gameState.audioContext.currentTime + 0.3);
+
+                    osc.start();
+                    osc.stop(gameState.audioContext.currentTime + 0.3);
+                }, i * 70);
+            });
+        };
+
+        // YANGI MUSIQA - Ingichka, baland melodiya
+        const startBackgroundMusic = () => {
+            if (!gameState.audioContext || !gameState.musicEnabled) return;
+
+            stopBackgroundMusic();
+
+            // Lofi-style ingichka melodiya
+            const melody = [
+                { notes: [1046.50, 1318.51, 1567.98], duration: 2000 }, // C-E-G yuqori
+                { notes: [1174.66, 1396.91, 1760.00], duration: 2000 }, // D-F-A
+                { notes: [1318.51, 1567.98, 1975.53], duration: 2000 }, // E-G-B
+                { notes: [1396.91, 1760.00, 2093.00], duration: 2000 }  // F-A-C
+            ];
+
+            let melodyIndex = 0;
+            let oscillators = [];
+            const gainNode = gameState.audioContext.createGain();
+            gainNode.connect(gameState.audioContext.destination);
+
+            const updateVolume = () => {
+                const volume = gameState.musicVolume / 100 * 0.02;
+                gainNode.gain.value = volume;
+            };
+            updateVolume();
+
+            const playMelody = () => {
+                oscillators.forEach(osc => {
+                    try { osc.stop(); osc.disconnect(); } catch(e) {}
+                });
+                oscillators = [];
+
+                const current = melody[melodyIndex];
+                current.notes.forEach((freq, idx) => {
+                    const osc = gameState.audioContext.createOscillator();
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+
+                    const oscGain = gameState.audioContext.createGain();
+                    oscGain.gain.value = 0.15 + (idx * 0.1);
+
+                    osc.connect(oscGain);
+                    oscGain.connect(gainNode);
+
+                    osc.start();
+                    oscillators.push(osc);
+                });
+
+                melodyIndex = (melodyIndex + 1) % melody.length;
+            };
+
+            playMelody();
+            const interval = setInterval(playMelody, 2000);
+            gameState.backgroundMusic = { oscillators, interval, gainNode, updateVolume };
+        };
+
+        const stopBackgroundMusic = () => {
+            if (gameState.backgroundMusic) {
+                clearInterval(gameState.backgroundMusic.interval);
+                gameState.backgroundMusic.oscillators.forEach(osc => {
+                    try { osc.stop(); osc.disconnect(); } catch(e) {}
+                });
+                try { gameState.backgroundMusic.gainNode.disconnect(); } catch(e) {}
+                gameState.backgroundMusic = null;
+            }
+        };
+
+        const updateMusicVolume = () => {
+            if (gameState.backgroundMusic && gameState.backgroundMusic.updateVolume) {
+                gameState.backgroundMusic.updateVolume();
+            }
+        };
+
+        // Game Logic
+        const getGridSize = (level) => Math.min(6 + level, 20);
+        const getColorCount = (level) => Math.min(2 + Math.floor(level / 2), 8);
+        const getCurrentLevel = () => Math.floor((gameState.currentStage - 1) / 5) + 1;
+        const getStageInLevel = () => ((gameState.currentStage - 1) % 5) + 1;
+
+        const generatePattern = (size, stage, level) => {
+            const pattern = Array(size).fill(null).map(() => Array(size).fill(0));
+            const colorCount = getColorCount(level);
+            const shapeType = stage % 10;
+            const centerX = Math.floor(size / 2);
+            const centerY = Math.floor(size / 2);
+
+            switch(shapeType) {
+                case 1:
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const x = (j - centerX) / (size / 6);
+                            const y = (i - centerY) / (size / 6);
+                            const heart = Math.pow(x * x + y * y - 1, 3) - x * x * y * y * y;
+                            if (heart < 0 && i < size - 1) {
+                                pattern[i][j] = (Math.abs(i - j) % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+                case 2:
+                    const radius = size / 3;
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const dist = Math.sqrt(Math.pow(i - centerY, 2) + Math.pow(j - centerX, 2));
+                            if (dist < radius) pattern[i][j] = (Math.floor(dist) % colorCount) + 1;
+                        }
+                    }
+                    break;
+                case 3:
+                    const margin = Math.floor(size / 4);
+                    for (let i = margin; i < size - margin; i++) {
+                        for (let j = margin; j < size - margin; j++) {
+                            pattern[i][j] = ((i + j) % colorCount) + 1;
+                        }
+                    }
+                    break;
+                default:
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            if ((i + j) % 3 === 0) pattern[i][j] = ((i + j) / 3 % colorCount) + 1;
+                        }
+                    }
+            }
+            return pattern;
+        };
+
+        const initStage = (stage) => {
+            const level = getCurrentLevel();
+            const size = getGridSize(level);
+            const colorCount = getColorCount(level);
+
+            gameState.grid = Array(size).fill(null).map(() => Array(size).fill('#FFFFFF'));
+
+            const pattern = generatePattern(size, stage, level);
+            const availableColors = allColors.slice(0, colorCount);
+
+            gameState.targetGrid = Array(size).fill(null).map((_, i) =>
+                Array(size).fill(null).map((_, j) => {
+                    const patternValue = pattern[i][j];
+                    return patternValue === 0 ? '#FFFFFF' : availableColors[patternValue - 1];
+                })
+            );
+
+            gameState.moves = 0;
+            gameState.completed = false;
+            gameState.selectedColor = availableColors[0];
+            render();
+        };
+
+        const handleCellClick = (row, col) => {
+            if (gameState.completed) return;
+
+            gameState.grid[row][col] = gameState.selectedColor;
+            gameState.moves++;
+            playColorSound(gameState.selectedColor);
+
+            checkCompletion();
+            render();
+        };
+
+        const checkCompletion = () => {
+            const isComplete = gameState.grid.every((row, i) =>
+                row.every((cell, j) => cell === gameState.targetGrid[i][j])
+            );
+
+            if (isComplete) {
+                gameState.completed = true;
+                const size = gameState.grid.length;
+                const perfectMoves = size * size - gameState.targetGrid.flat().filter(c => c === '#FFFFFF').length;
+                const efficiency = Math.max(0, 100 - Math.abs(gameState.moves - perfectMoves) * 2);
+                const levelScore = Math.floor(efficiency + gameState.currentStage * 5);
+                gameState.score += levelScore;
+
+                setTimeout(() => {
+                    if (getStageInLevel() === 5) {
+                        playLevelUpSound();
+                    } else {
+                        playSuccessSound();
+                    }
+                }, 200);
+
+                render();
+            }
+        };
+
+        // Render
+        const render = () => {
+            document.body.setAttribute('data-theme', gameState.darkMode ? 'dark' : 'light');
+
+            const app = document.getElementById('app');
+            const level = getCurrentLevel();
+            const stageInLevel = getStageInLevel();
+            const size = gameState.grid.length;
+            const cellSize = Math.min(35, 450 / size);
+            const colorCount = getColorCount(level);
+            const availableColors = allColors.slice(0, colorCount);
+
+            const bgGradient = gameState.darkMode
+                ? 'from-gray-900 via-purple-900 to-gray-900'
+                : 'from-indigo-600 via-purple-600 to-pink-600';
+
+            app.innerHTML = `
+                <div class="min-h-screen bg-gradient-to-br ${bgGradient} p-4">
+                    <div class="max-w-7xl mx-auto">
+                        <!-- Header -->
+                        <div class="card rounded-2xl shadow-2xl p-6 mb-4">
+                            <div class="flex items-center justify-between flex-wrap gap-4">
+                                <div>
+                                    <h1 class="text-3xl font-bold" style="color: var(--text-primary)">🎨 Пиксельный Мастер</h1>
+                                    <p style="color: var(--text-secondary)">Этап ${gameState.currentStage}/${gameState.totalStages} | Уровень ${level} (${stageInLevel}/5)</p>
+                                </div>
+                                <div class="flex gap-6">
+                                    <div class="text-center">
+                                        <p class="text-2xl font-bold text-purple-600">${level}</p>
+                                        <p class="text-xs" style="color: var(--text-secondary)">Уровень</p>
+                                    </div>
+                                    <div class="text-center">
+                                        <p class="text-2xl font-bold text-yellow-500">${gameState.score}</p>
+                                        <p class="text-xs" style="color: var(--text-secondary)">Очки</p>
+                                    </div>
+                                    <div class="text-center">
+                                        <p class="text-2xl font-bold text-blue-500">${gameState.moves}</p>
+                                        <p class="text-xs" style="color: var(--text-secondary)">Ходы</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Controls -->
+                            <div class="flex flex-wrap gap-2 mt-4 justify-center items-center">
+                                <button onclick="toggleSound()" class="px-4 py-2 rounded-lg font-medium text-sm ${gameState.soundEnabled ? 'bg-green-500 text-white' : 'bg-gray-300 text-gray-700'}">
+                                    ${gameState.soundEnabled ? '🔊 Звук' : '🔇 Звук'}
+                                </button>
+
+                                <div class="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-lg">
+                                    <span class="text-xs">🔉</span>
+                                    <input type="range" min="0" max="100" value="${gameState.soundVolume}"
+                                           oninput="updateSoundVolume(this.value)" />
+                                    <span class="text-xs font-bold">${gameState.soundVolume}%</span>
+                                </div>
+
+                                <button onclick="toggleMusic()" class="px-4 py-2 rounded-lg font-medium text-sm ${gameState.musicEnabled ? 'bg-blue-500 text-white' : 'bg-gray-300 text-gray-700'}">
+                                    ${gameState.musicEnabled ? '🎵 Музыка' : '🎵 Музыка'}
+                                </button>
+
+                                <div class="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-lg">
+                                    <span class="text-xs">🎶</span>
+                                    <input type="range" min="0" max="100" value="${gameState.musicVolume}"
+                                           oninput="updateMusicVolumeSlider(this.value)" />
+                                    <span class="text-xs font-bold">${gameState.musicVolume}%</span>
+                                </div>
+
+                                <button onclick="toggleDarkMode()" class="px-4 py-2 rounded-lg font-medium text-sm ${gameState.darkMode ? 'bg-yellow-500 text-gray-900' : 'bg-gray-800 text-white'}">
+                                    ${gameState.darkMode ? '☀️ Светлая' : '🌙 Тёмная'}
+                                </button>
+                            </div>
+
+                            <!-- Progress -->
+                            <div class="mt-4">
+                                <div class="flex justify-between text-xs mb-1" style="color: var(--text-secondary)">
+                                    <span>На уровне: ${stageInLevel}/5</span>
+                                    <span>${Math.floor((gameState.currentStage / gameState.totalStages) * 100)}% выполнено</span>
+                                </div>
+                                <div class="w-full bg-gray-200 rounded-full h-3">
+                                    <div class="bg-gradient-to-r from-green-400 to-blue-500 h-3 rounded-full" style="width: ${(gameState.currentStage / gameState.totalStages) * 100}%"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid lg:grid-cols-2 gap-4">
+                            <!-- Target -->
+                            <div class="card rounded-2xl shadow-2xl p-6">
+                                <div class="flex items-center justify-between mb-4">
+                                    <h2 class="text-xl font-bold" style="color: var(--text-primary)">🎯 Образец</h2>
+                                    <button onclick="toggleTarget()" class="px-4 py-2 rounded-lg hover:opacity-80" style="background-color: var(--border-color); color: var(--text-primary)">
+                                        ${gameState.showTarget ? 'Скрыть' : 'Показать'}
+                                    </button>
+                                </div>
+                                ${gameState.showTarget ? `
+                                    <div class="flex justify-center">
+                                        <div class="inline-grid gap-0.5 bg-gray-300 p-2 rounded-lg" style="grid-template-columns: repeat(${size}, ${cellSize}px)">
+                                            ${gameState.targetGrid.map((row, i) =>
+                                                row.map((color, j) => `
+                                                    <div style="width: ${cellSize}px; height: ${cellSize}px; background-color: ${color};" class="rounded-sm border border-gray-400"></div>
+                                                `).join('')
+                                            ).join('')}
+                                        </div>
+                                    </div>
+                                ` : ''}
+                            </div>
+
+                            <!-- Player Grid -->
+                            <div class="card rounded-2xl shadow-2xl p-6">
+                                <h2 class="text-xl font-bold mb-4" style="color: var(--text-primary)">🎨 Ваша работа</h2>
+                                <div class="flex justify-center mb-4">
+                                    <div class="inline-grid gap-0.5 bg-gray-300 p-2 rounded-lg" style="grid-template-columns: repeat(${size}, ${cellSize}px)">
+                                        ${gameState.grid.map((row, i) =>
+                                            row.map((color, j) => `
+                                                <div onclick="handleCellClick(${i}, ${j})" style="width: ${cellSize}px; height: ${cellSize}px; background-color: ${color};" class="cell rounded-sm border-2 border-gray-400"></div>
+                                            `).join('')
+                                        ).join('')}
+                                    </div>
+                                </div>
+
+                                <!-- Colors -->
+                                <div class="border-t pt-4" style="border-color: var(--border-color)">
+                                    <p class="text-sm font-medium mb-2" style="color: var(--text-primary)">Выберите цвет:</p>
+                                    <div class="flex flex-wrap gap-2 justify-center">
+                                        <button onclick="selectColor('#FFFFFF')" class="w-10 h-10 rounded-lg border-4 ${gameState.selectedColor === '#FFFFFF' ? 'border-blue-500 scale-110' : 'border-gray-300'}" style="background-color: #FFFFFF"></button>
+                                        ${availableColors.map(color => `
+                                            <button onclick="selectColor('${color}')" class="w-10 h-10 rounded-lg border-4 ${gameState.selectedColor === color ? 'border-blue-500 scale-110' : 'border-gray-300'}" style="background-color: ${color}"></button>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="card rounded-2xl shadow-2xl p-6 mt-4">
+                            <div class="flex justify-center gap-4">
+                                <button onclick="resetStage()" class="px-6 py-3 bg-red-500 text-white rounded-xl hover:bg-red-600 font-medium">
+                                    ↻ Сбросить
+                                </button>
+                                ${gameState.completed ? `
+                                    <button onclick="nextStage()" class="px-6 py-3 bg-green-500 text-white rounded-xl hover:bg-green-600 font-medium animate-pulse-custom">
+                                        ${gameState.currentStage < gameState.totalStages ? 'Следующий этап →' : 'Начать заново 🔄'}
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+
+                        ${gameState.completed ? `
+                            <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                                <div class="bg-white rounded-3xl p-8 max-w-md text-center">
+                                    <div class="text-6xl mb-4">${stageInLevel === 5 ? '🎊' : '🎉'}</div>
+                                    <h2 class="text-3xl font-bold mb-2 text-gray-800">${stageInLevel === 5 ? `Уровень ${level} пройден!` : 'Отлично!'}</h2>
+                                    <p class="text-xl text-gray-600 mb-4">Этап ${gameState.currentStage}/${gameState.totalStages}</p>
+                                    <p class="text-2xl font-bold text-green-600 mb-4">Очки: ${gameState.score}</p>
+                                    ${stageInLevel === 5 ? '<p class="text-purple-600 font-bold mb-4">⭐ Следующий уровень сложнее! ⭐</p>' : ''}
+                                    <button onclick="nextStage()" class="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl font-bold text-lg">
+                                        ${gameState.currentStage < gameState.totalStages ? 'Следующий этап →' : 'Играть заново 🔄'}
+                                    </button>
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        };
+
+        // Global functions
+        window.handleCellClick = handleCellClick;
+        window.selectColor = (color) => {
+            gameState.selectedColor = color;
+            render();
+        };
+        window.toggleTarget = () => {
+            gameState.showTarget = !gameState.showTarget;
+            render();
+        };
+        window.toggleSound = () => {
+            gameState.soundEnabled = !gameState.soundEnabled;
+            render();
+        };
+        window.toggleMusic = () => {
+            gameState.musicEnabled = !gameState.musicEnabled;
+            if (!gameState.musicEnabled) {
+                stopBackgroundMusic();
+            } else if (gameState.audioContext) {
+                startBackgroundMusic();
+            }
+            render();
+        };
+        window.toggleDarkMode = () => {
+            gameState.darkMode = !gameState.darkMode;
+            render();
+        };
+        window.updateSoundVolume = (value) => {
+            gameState.soundVolume = parseInt(value);
+            render();
+        };
+        window.updateMusicVolumeSlider = (value) => {
+            gameState.musicVolume = parseInt(value);
+            updateMusicVolume();
+            render();
+        };
+        window.resetStage = () => {
+            initStage(gameState.currentStage);
+        };
+        window.nextStage = () => {
+            if (gameState.currentStage < gameState.totalStages) {
+                gameState.currentStage++;
+            } else {
+                gameState.currentStage = 1;
+                gameState.score = 0;
+            }
+            initStage(gameState.currentStage);
+        };
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            initAudio();
+            initStage(1);
+            startBackgroundMusic();
+        });
+
+        // Start audio on first click
+        document.addEventListener('click', () => {
+            if (gameState.audioContext && gameState.audioContext.state === 'suspended') {
+                gameState.audioContext.resume();
+            }
+        }, { once: true });
+    </script>
+</body>
+</html>

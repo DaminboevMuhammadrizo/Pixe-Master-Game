@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -40,18 +41,28 @@
             transition: all 0.1s ease;
             cursor: pointer;
         }
+
         .cell:hover {
             transform: scale(1.1);
             border-color: #3b82f6 !important;
         }
+
         .cell:active {
             transform: scale(0.95);
         }
 
         @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
+
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.05);
+            }
         }
+
         .animate-pulse-custom {
             animation: pulse 2s infinite;
         }
@@ -85,6 +96,7 @@
         }
     </style>
 </head>
+
 <body>
     <div id="app"></div>
 
@@ -233,7 +245,7 @@
 
             const playMelody = () => {
                 oscillators.forEach(osc => {
-                    try { osc.stop(); osc.disconnect(); } catch(e) {}
+                    try { osc.stop(); osc.disconnect(); } catch (e) { }
                 });
                 oscillators = [];
 
@@ -265,9 +277,9 @@
             if (gameState.backgroundMusic) {
                 clearInterval(gameState.backgroundMusic.interval);
                 gameState.backgroundMusic.oscillators.forEach(osc => {
-                    try { osc.stop(); osc.disconnect(); } catch(e) {}
+                    try { osc.stop(); osc.disconnect(); } catch (e) { }
                 });
-                try { gameState.backgroundMusic.gainNode.disconnect(); } catch(e) {}
+                try { gameState.backgroundMusic.gainNode.disconnect(); } catch (e) { }
                 gameState.backgroundMusic = null;
             }
         };
@@ -291,7 +303,7 @@
             const centerX = Math.floor(size / 2);
             const centerY = Math.floor(size / 2);
 
-            switch(shapeType) {
+            switch (shapeType) {
                 case 1:
                     for (let i = 0; i < size; i++) {
                         for (let j = 0; j < size; j++) {
@@ -486,10 +498,10 @@
                                     <div class="flex justify-center">
                                         <div class="inline-grid gap-0.5 bg-gray-300 p-2 rounded-lg" style="grid-template-columns: repeat(${size}, ${cellSize}px)">
                                             ${gameState.targetGrid.map((row, i) =>
-                                                row.map((color, j) => `
+                row.map((color, j) => `
                                                     <div style="width: ${cellSize}px; height: ${cellSize}px; background-color: ${color};" class="rounded-sm border border-gray-400"></div>
                                                 `).join('')
-                                            ).join('')}
+            ).join('')}
                                         </div>
                                     </div>
                                 ` : ''}
@@ -501,10 +513,10 @@
                                 <div class="flex justify-center mb-4">
                                     <div class="inline-grid gap-0.5 bg-gray-300 p-2 rounded-lg" style="grid-template-columns: repeat(${size}, ${cellSize}px)">
                                         ${gameState.grid.map((row, i) =>
-                                            row.map((color, j) => `
+                row.map((color, j) => `
                                                 <div onclick="handleCellClick(${i}, ${j})" style="width: ${cellSize}px; height: ${cellSize}px; background-color: ${color};" class="cell rounded-sm border-2 border-gray-400"></div>
                                             `).join('')
-                                        ).join('')}
+            ).join('')}
                                     </div>
                                 </div>
 
@@ -617,5 +629,80 @@
             }
         }, { once: true });
     </script>
+
+    <!-- Yandex Games SDK -->
+    <script src="https://yandex.ru/games/sdk/v2" onload="initSDK()"></script>
+
+    <script>
+
+        window.nextStage = () => {
+
+            // ⭐ Yandex full-screen reklama
+            if (ysdk) showFullscreenAd();
+
+            if (gameState.currentStage < gameState.totalStages) {
+                gameState.currentStage++;
+            } else {
+                gameState.currentStage = 1;
+                gameState.score = 0;
+            }
+            initStage(gameState.currentStage);
+        };
+
+
+        let ysdk = null;
+
+        // YANDEX SDK INIT
+        async function initSDK() {
+            try {
+                ysdk = await YaGames.init();
+                console.log("Yandex SDK Loaded ✔");
+
+                initAds();
+            } catch (e) {
+                console.error("SDK init error:", e);
+            }
+        }
+
+        // ADS INIT
+        function initAds() {
+            ysdk.adv.getFullscreenAdv();
+            ysdk.adv.getRewardedVideoAdv();
+        }
+
+        // FULLSCREEN ADS
+        async function showFullscreenAd() {
+            try {
+                await ysdk.adv.showFullscreenAdv({
+                    callbacks: {
+                        onClose: () => console.log("Fullscreen closed"),
+                        onError: (err) => console.error("Fullscreen error:", err)
+                    }
+                });
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        // REWARDED VIDEO ADS
+        async function showRewardedAd(onReward) {
+            try {
+                await ysdk.adv.showRewardedVideo({
+                    callbacks: {
+                        onRewarded: () => {
+                            console.log("Reward given!");
+                            if (onReward) onReward();
+                        },
+                        onError: (err) => console.error("Reward error:", err)
+                    }
+                });
+            } catch (err) {
+                console.error(err);
+            }
+        }
+    </script>
+
+
 </body>
+
 </html>

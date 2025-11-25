@@ -1,12 +1,15 @@
 <!DOCTYPE html>
 <html lang="ru">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pixel Master v2.0 - Пиксельный Мастер</title>
+    <title>Pixel Master v3.0 - Пиксельный Мастер</title>
+
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+
     <style>
+        /* Yandex Games uchun moslashtirilgan CSS */
         :root {
             --bg-primary: #f9fafb;
             --bg-secondary: #ffffff;
@@ -30,16 +33,22 @@
             background-color: var(--bg-primary);
             color: var(--text-primary);
             transition: all 0.3s ease;
+            overflow-x: hidden;
         }
 
         .card {
             background-color: var(--bg-secondary);
             transition: all 0.3s ease;
+            border-radius: 1rem;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
         }
 
         .cell {
             transition: all 0.1s ease;
             cursor: pointer;
+            border-width: 2px;
+            border-color: #9ca3af;
+            border-radius: 0.25rem;
         }
 
         .cell:hover {
@@ -52,12 +61,9 @@
         }
 
         @keyframes pulse {
-
-            0%,
-            100% {
+            0%, 100% {
                 transform: scale(1);
             }
-
             50% {
                 transform: scale(1.05);
             }
@@ -94,6 +100,26 @@
             cursor: pointer;
             border: none;
         }
+
+        /* Yandex Games uchun maxsus sozlamalar */
+        #app {
+            width: 100%;
+            min-height: 100vh;
+        }
+
+        .game-container {
+            min-height: 100vh;
+            padding: 1rem;
+        }
+
+        /* Grid uchun maxsus sozlamalar */
+        .grid-container {
+            display: inline-grid;
+            gap: 2px;
+            background-color: #d1d5db;
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+        }
     </style>
 </head>
 
@@ -101,13 +127,23 @@
     <div id="app"></div>
 
     <script>
+        // Constants
+        const WHITE_COLOR = '#FFFFFF';
+        const GAME_COLORS = [
+            '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A',
+            '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2',
+            '#F8B195', '#C06C84', '#6C5B7B', '#355C7D',
+            '#E74C3C', '#3498DB', '#2ECC71', '#F39C12',
+            '#9B59B6', '#1ABC9C', '#E67E22', '#95A5A6'
+        ];
+
         // Game State
         let gameState = {
             currentStage: 1,
             totalStages: 400,
             grid: [],
             targetGrid: [],
-            selectedColor: '#FF6B6B',
+            selectedColor: GAME_COLORS[0],
             moves: 0,
             score: 0,
             completed: false,
@@ -115,15 +151,512 @@
             soundEnabled: true,
             musicEnabled: true,
             darkMode: false,
-            musicVolume: 20, // 0-100
-            soundVolume: 50, // 0-100
+            musicVolume: 20,
+            soundVolume: 50,
             audioContext: null,
             backgroundMusic: null
         };
 
+        // Game Logic Functions
+        const getGridSize = (level) => Math.min(6 + level, 20);
+
+        const getColorCount = (level) => Math.min(2 + Math.floor(level / 2), 8);
+
+        const getCurrentLevel = (stage) => Math.floor((stage - 1) / 5) + 1;
+
+        const getStageInLevel = (stage) => ((stage - 1) % 5) + 1;
+
+        // Har bir stage uchun unique seed yaratish
+        const getStagesSeed = (stage) => stage * 12345 + stage * stage * 67890;
+
+        // Pseudorandom number generator (har stage uchun unique)
+        const seededRandom = (seed, min = 0, max = 1) => {
+            const x = Math.sin(seed) * 10000;
+            const random = x - Math.floor(x);
+            return min + random * (max - min);
+        };
+
+        // 30+ turli xil pattern generatori
+        const generatePattern = (size, stage, level) => {
+            const pattern = Array(size).fill(null).map(() => Array(size).fill(0));
+            const colorCount = getColorCount(level);
+            const seed = getStagesSeed(stage);
+            const centerX = Math.floor(size / 2);
+            const centerY = Math.floor(size / 2);
+
+            // 30 xil pattern turi
+            const patternType = stage % 30;
+
+            switch (patternType) {
+                case 0: // Spiral pattern
+                    let x = centerX, y = centerY;
+                    let dx = 0, dy = -1;
+                    let steps = 1;
+                    let stepCount = 0;
+                    let colorIndex = 1;
+
+                    for (let i = 0; i < size * size; i++) {
+                        if (x >= 0 && x < size && y >= 0 && y < size) {
+                            pattern[y][x] = colorIndex;
+                            colorIndex = (colorIndex % colorCount) + 1;
+                        }
+
+                        if (stepCount === steps) {
+                            stepCount = 0;
+                            const temp = dx;
+                            dx = -dy;
+                            dy = temp;
+                            if (dy === 0) steps++;
+                        }
+
+                        x += dx;
+                        y += dy;
+                        stepCount++;
+                    }
+                    break;
+
+                case 1: // Yurak shakli (yaxshilangan)
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const x = (j - centerX) / (size / 6);
+                            const y = (i - centerY) / (size / 6);
+                            const heart = Math.pow(x * x + y * y - 1, 3) - x * x * y * y * y;
+                            if (heart < 0) {
+                                const dist = Math.sqrt(Math.pow(i - centerY, 2) + Math.pow(j - centerX, 2));
+                                pattern[i][j] = (Math.floor(dist * 3) % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 2: // Konsentrik doiralar
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const dist = Math.sqrt(
+                                Math.pow(i - centerY, 2) + Math.pow(j - centerX, 2)
+                            );
+                            const ring = Math.floor(dist / (size / (colorCount * 2)));
+                            if (ring < colorCount) {
+                                pattern[i][j] = ring + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 3: // Shaxmat taxtasi
+                    const blockSize = Math.max(1, Math.floor(size / 6));
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const blockI = Math.floor(i / blockSize);
+                            const blockJ = Math.floor(j / blockSize);
+                            if ((blockI + blockJ) % 2 === 0) {
+                                pattern[i][j] = ((blockI + blockJ) % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 4: // Yulduz shakli
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const dx = j - centerX;
+                            const dy = i - centerY;
+                            const angle = Math.atan2(dy, dx);
+                            const radius = Math.sqrt(dx * dx + dy * dy);
+                            const starRadius = (size / 3) * (1 + 0.5 * Math.sin(5 * angle));
+                            if (radius < starRadius) {
+                                pattern[i][j] = (Math.floor(angle * 10) % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 5: // Radial gradient
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const dist = Math.sqrt(
+                                Math.pow(i - centerY, 2) + Math.pow(j - centerX, 2)
+                            );
+                            const normalized = dist / (size / 2);
+                            pattern[i][j] = Math.min(Math.floor(normalized * colorCount) + 1, colorCount);
+                        }
+                    }
+                    break;
+
+                case 6: // Zigzag pattern
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const wave = Math.floor(Math.abs(Math.sin(j / 3) * 5));
+                            if (i % 4 === wave % 4) {
+                                pattern[i][j] = (j % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 7: // Mandala pattern
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const dx = j - centerX;
+                            const dy = i - centerY;
+                            const angle = Math.atan2(dy, dx);
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            const mandala = Math.floor(Math.abs(Math.sin(angle * 8) * dist));
+                            if (mandala % 3 === 0 && dist < size / 2) {
+                                pattern[i][j] = (mandala % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 8: // Diamond pattern
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const diamondDist = Math.abs(i - centerY) + Math.abs(j - centerX);
+                            if (diamondDist < size / 2) {
+                                pattern[i][j] = (diamondDist % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 9: // Crosshatch pattern
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            if ((i + j) % 4 === 0 || (i - j) % 4 === 0) {
+                                pattern[i][j] = ((i * j) % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 10: // Flower pattern
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const dx = j - centerX;
+                            const dy = i - centerY;
+                            const angle = Math.atan2(dy, dx);
+                            const radius = Math.sqrt(dx * dx + dy * dy);
+                            const petalRadius = (size / 4) * (1 + Math.sin(6 * angle) * 0.5);
+                            if (radius < petalRadius) {
+                                pattern[i][j] = (Math.floor(radius * 2) % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 11: // Hexagonal pattern
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const hexSize = Math.max(2, Math.floor(size / 8));
+                            const hexI = Math.floor(i / hexSize);
+                            const hexJ = Math.floor(j / hexSize);
+                            const offset = hexI % 2 === 0 ? 0 : hexSize / 2;
+                            if ((j - offset) % hexSize < hexSize - 1) {
+                                pattern[i][j] = ((hexI + hexJ) % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 12: // Wave interference pattern
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const wave1 = Math.sin(i / 2) * 3;
+                            const wave2 = Math.sin(j / 2) * 3;
+                            const interference = Math.floor(Math.abs(wave1 + wave2));
+                            if (interference % 2 === 0) {
+                                pattern[i][j] = (interference % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 13: // Pyramid pattern
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const level = Math.min(i, j, size - 1 - i, size - 1 - j);
+                            pattern[i][j] = (level % colorCount) + 1;
+                        }
+                    }
+                    break;
+
+                case 14: // Sunburst pattern
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const dx = j - centerX;
+                            const dy = i - centerY;
+                            const angle = Math.atan2(dy, dx) + Math.PI;
+                            const rayCount = 12;
+                            const ray = Math.floor((angle / (2 * Math.PI)) * rayCount);
+                            if (ray % 2 === 0) {
+                                const dist = Math.sqrt(dx * dx + dy * dy);
+                                pattern[i][j] = (Math.floor(dist) % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 15: // Celtic knot inspired
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const knotPattern = (Math.sin(i / 2) + Math.cos(j / 2)) * 3;
+                            if (Math.floor(Math.abs(knotPattern)) % 2 === 0) {
+                                pattern[i][j] = (Math.floor(Math.abs(knotPattern)) % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 16: // Butterfly wings
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const dx = j - centerX;
+                            const dy = i - centerY;
+                            const angle = Math.atan2(dy, dx);
+                            const radius = Math.sqrt(dx * dx + dy * dy);
+                            const wingShape = Math.abs(Math.cos(angle * 2)) * (size / 3);
+                            if (radius < wingShape) {
+                                pattern[i][j] = (Math.floor(angle * 5) % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 17: // Maze-like pattern
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const maze = (i * 7 + j * 11) % 13;
+                            if (maze > 5) {
+                                pattern[i][j] = (maze % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 18: // Target circles
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const dist = Math.sqrt(
+                                Math.pow(i - centerY, 2) + Math.pow(j - centerX, 2)
+                            );
+                            const ring = Math.floor(dist / 2);
+                            if (ring % 2 === 0 && dist < size / 2) {
+                                pattern[i][j] = (ring % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 19: // Lightning bolt
+                    for (let i = 0; i < size; i++) {
+                        const zigzag = centerX + Math.floor(Math.sin(i / 2) * (size / 4));
+                        for (let j = Math.max(0, zigzag - 1); j <= Math.min(size - 1, zigzag + 1); j++) {
+                            pattern[i][j] = ((i + j) % colorCount) + 1;
+                        }
+                    }
+                    break;
+
+                case 20: // Peacock feather
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const dx = j - centerX;
+                            const dy = i - centerY;
+                            const angle = Math.atan2(dy, dx);
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            const feather = Math.sin(angle * 4) * (size / 4);
+                            if (dist < Math.abs(feather) + size / 6) {
+                                pattern[i][j] = (Math.floor(dist + Math.abs(feather)) % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 21: // Tribal pattern
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const tribal = Math.floor((Math.sin(i / 3) + Math.cos(j / 3)) * 5);
+                            if (Math.abs(tribal) > 3) {
+                                pattern[i][j] = (Math.abs(tribal) % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 22: // Snowflake pattern
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const dx = j - centerX;
+                            const dy = i - centerY;
+                            const angle = Math.atan2(dy, dx);
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            const branch = Math.floor((angle + Math.PI) / (Math.PI / 3));
+                            if (Math.abs(Math.sin(branch * Math.PI / 3) * dist) < 1) {
+                                pattern[i][j] = ((branch + Math.floor(dist)) % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 23: // Labyrinth pattern
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const path = (i + j) % 5;
+                            if (path === 0 || path === 2) {
+                                pattern[i][j] = ((i * j) % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 24: // Atom structure
+                    const electronRings = [size / 6, size / 4, size / 3];
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const dist = Math.sqrt(
+                                Math.pow(i - centerY, 2) + Math.pow(j - centerX, 2)
+                            );
+                            for (let r = 0; r < electronRings.length; r++) {
+                                if (Math.abs(dist - electronRings[r]) < 1.5) {
+                                    pattern[i][j] = (r % colorCount) + 1;
+                                }
+                            }
+                        }
+                    }
+                    break;
+
+                case 25: // Origami fold pattern
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const fold1 = Math.abs(i - j);
+                            const fold2 = Math.abs(i + j - size);
+                            if (fold1 < 2 || fold2 < 2) {
+                                pattern[i][j] = ((i + j) % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 26: // DNA helix
+                    for (let i = 0; i < size; i++) {
+                        const helix1 = centerX + Math.floor(Math.sin(i / 2) * (size / 6));
+                        const helix2 = centerX + Math.floor(Math.cos(i / 2) * (size / 6));
+
+                        if (helix1 >= 0 && helix1 < size) {
+                            pattern[i][helix1] = ((i % colorCount) + 1);
+                        }
+                        if (helix2 >= 0 && helix2 < size) {
+                            pattern[i][helix2] = ((i % colorCount) + 1);
+                        }
+                    }
+                    break;
+
+                case 27: // Kaleidoscope
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const dx = Math.abs(j - centerX);
+                            const dy = Math.abs(i - centerY);
+                            const angle = Math.atan2(dy, dx);
+                            const sector = Math.floor((angle / (Math.PI / 4)));
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            if (sector % 2 === 0 && dist < size / 2) {
+                                pattern[i][j] = (Math.floor(dist) % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 28: // Mosaic tiles
+                    const tileSize = Math.max(2, Math.floor(size / 6));
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const tileI = Math.floor(i / tileSize);
+                            const tileJ = Math.floor(j / tileSize);
+                            const tilePattern = (tileI * 7 + tileJ * 13) % 3;
+                            if (tilePattern > 0) {
+                                pattern[i][j] = ((tileI + tileJ) % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                case 29: // Circuit board pattern
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const isHorizontalLine = i % 4 === 0;
+                            const isVerticalLine = j % 4 === 0;
+                            const isJunction = isHorizontalLine && isVerticalLine;
+
+                            if (isJunction) {
+                                pattern[i][j] = ((i + j) / 4 % colorCount) + 1;
+                            } else if (isHorizontalLine || isVerticalLine) {
+                                pattern[i][j] = ((i + j) % colorCount) + 1;
+                            }
+                        }
+                    }
+                    break;
+
+                default:
+                    // Random creative pattern
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            const randomValue = seededRandom(seed + i * size + j, 0, 1);
+                            if (randomValue > 0.3) {
+                                pattern[i][j] = Math.floor(randomValue * colorCount) + 1;
+                            }
+                        }
+                    }
+            }
+
+            return pattern;
+        };
+
+        const createTargetGrid = (size, stage, level) => {
+            const pattern = generatePattern(size, stage, level);
+            const colorCount = getColorCount(level);
+            const availableColors = GAME_COLORS.slice(0, colorCount);
+
+            return Array(size)
+                .fill(null)
+                .map((_, i) =>
+                    Array(size)
+                        .fill(null)
+                        .map((_, j) => {
+                            const patternValue = pattern[i][j];
+                            return patternValue === 0
+                                ? WHITE_COLOR
+                                : availableColors[patternValue - 1];
+                        })
+                );
+        };
+
+        const createEmptyGrid = (size) => {
+            return Array(size)
+                .fill(null)
+                .map(() => Array(size).fill(WHITE_COLOR));
+        };
+
+        const checkCompletion = (playerGrid, targetGrid) => {
+            return playerGrid.every((row, i) =>
+                row.every((cell, j) => cell === targetGrid[i][j])
+            );
+        };
+
+        const calculateScore = (moves, stage, targetGrid) => {
+            const filledCells = targetGrid.flat().filter((c) => c !== WHITE_COLOR).length;
+            const perfectMoves = filledCells;
+            const efficiency = Math.max(0, 100 - Math.abs(moves - perfectMoves) * 2);
+            const levelScore = Math.floor(efficiency + stage * 5);
+            return levelScore;
+        };
+
         // Audio Setup
         const initAudio = () => {
-            gameState.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            try {
+                gameState.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            } catch (e) {
+                console.log("Audio not supported:", e);
+            }
         };
 
         const colorFrequencies = {
@@ -135,14 +668,6 @@
             '#F39C12': 1318.51, '#9B59B6': 1396.91, '#1ABC9C': 1567.98,
             '#E67E22': 1760.00, '#95A5A6': 1975.53, '#FFFFFF': 440.00
         };
-
-        const allColors = [
-            '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A',
-            '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2',
-            '#F8B195', '#C06C84', '#6C5B7B', '#355C7D',
-            '#E74C3C', '#3498DB', '#2ECC71', '#F39C12',
-            '#9B59B6', '#1ABC9C', '#E67E22', '#95A5A6'
-        ];
 
         // Play color sound - INGICHKA NOTA
         const playColorSound = (color) => {
@@ -290,76 +815,15 @@
             }
         };
 
-        // Game Logic
-        const getGridSize = (level) => Math.min(6 + level, 20);
-        const getColorCount = (level) => Math.min(2 + Math.floor(level / 2), 8);
-        const getCurrentLevel = () => Math.floor((gameState.currentStage - 1) / 5) + 1;
-        const getStageInLevel = () => ((gameState.currentStage - 1) % 5) + 1;
-
-        const generatePattern = (size, stage, level) => {
-            const pattern = Array(size).fill(null).map(() => Array(size).fill(0));
-            const colorCount = getColorCount(level);
-            const shapeType = stage % 10;
-            const centerX = Math.floor(size / 2);
-            const centerY = Math.floor(size / 2);
-
-            switch (shapeType) {
-                case 1:
-                    for (let i = 0; i < size; i++) {
-                        for (let j = 0; j < size; j++) {
-                            const x = (j - centerX) / (size / 6);
-                            const y = (i - centerY) / (size / 6);
-                            const heart = Math.pow(x * x + y * y - 1, 3) - x * x * y * y * y;
-                            if (heart < 0 && i < size - 1) {
-                                pattern[i][j] = (Math.abs(i - j) % colorCount) + 1;
-                            }
-                        }
-                    }
-                    break;
-                case 2:
-                    const radius = size / 3;
-                    for (let i = 0; i < size; i++) {
-                        for (let j = 0; j < size; j++) {
-                            const dist = Math.sqrt(Math.pow(i - centerY, 2) + Math.pow(j - centerX, 2));
-                            if (dist < radius) pattern[i][j] = (Math.floor(dist) % colorCount) + 1;
-                        }
-                    }
-                    break;
-                case 3:
-                    const margin = Math.floor(size / 4);
-                    for (let i = margin; i < size - margin; i++) {
-                        for (let j = margin; j < size - margin; j++) {
-                            pattern[i][j] = ((i + j) % colorCount) + 1;
-                        }
-                    }
-                    break;
-                default:
-                    for (let i = 0; i < size; i++) {
-                        for (let j = 0; j < size; j++) {
-                            if ((i + j) % 3 === 0) pattern[i][j] = ((i + j) / 3 % colorCount) + 1;
-                        }
-                    }
-            }
-            return pattern;
-        };
-
+        // Game Initialization
         const initStage = (stage) => {
-            const level = getCurrentLevel();
+            const level = getCurrentLevel(stage);
             const size = getGridSize(level);
             const colorCount = getColorCount(level);
+            const availableColors = GAME_COLORS.slice(0, colorCount);
 
-            gameState.grid = Array(size).fill(null).map(() => Array(size).fill('#FFFFFF'));
-
-            const pattern = generatePattern(size, stage, level);
-            const availableColors = allColors.slice(0, colorCount);
-
-            gameState.targetGrid = Array(size).fill(null).map((_, i) =>
-                Array(size).fill(null).map((_, j) => {
-                    const patternValue = pattern[i][j];
-                    return patternValue === 0 ? '#FFFFFF' : availableColors[patternValue - 1];
-                })
-            );
-
+            gameState.grid = createEmptyGrid(size);
+            gameState.targetGrid = createTargetGrid(size, stage, level);
             gameState.moves = 0;
             gameState.completed = false;
             gameState.selectedColor = availableColors[0];
@@ -373,33 +837,22 @@
             gameState.moves++;
             playColorSound(gameState.selectedColor);
 
-            checkCompletion();
-            render();
-        };
-
-        const checkCompletion = () => {
-            const isComplete = gameState.grid.every((row, i) =>
-                row.every((cell, j) => cell === gameState.targetGrid[i][j])
-            );
-
+            const isComplete = checkCompletion(gameState.grid, gameState.targetGrid);
             if (isComplete) {
                 gameState.completed = true;
-                const size = gameState.grid.length;
-                const perfectMoves = size * size - gameState.targetGrid.flat().filter(c => c === '#FFFFFF').length;
-                const efficiency = Math.max(0, 100 - Math.abs(gameState.moves - perfectMoves) * 2);
-                const levelScore = Math.floor(efficiency + gameState.currentStage * 5);
-                gameState.score += levelScore;
+                const stageScore = calculateScore(gameState.moves, gameState.currentStage, gameState.targetGrid);
+                gameState.score += stageScore;
 
                 setTimeout(() => {
-                    if (getStageInLevel() === 5) {
+                    if (getStageInLevel(gameState.currentStage) === 5) {
                         playLevelUpSound();
                     } else {
                         playSuccessSound();
                     }
                 }, 200);
-
-                render();
             }
+
+            render();
         };
 
         // Render
@@ -407,22 +860,22 @@
             document.body.setAttribute('data-theme', gameState.darkMode ? 'dark' : 'light');
 
             const app = document.getElementById('app');
-            const level = getCurrentLevel();
-            const stageInLevel = getStageInLevel();
+            const level = getCurrentLevel(gameState.currentStage);
+            const stageInLevel = getStageInLevel(gameState.currentStage);
             const size = gameState.grid.length;
             const cellSize = Math.min(35, 450 / size);
             const colorCount = getColorCount(level);
-            const availableColors = allColors.slice(0, colorCount);
+            const availableColors = GAME_COLORS.slice(0, colorCount);
 
             const bgGradient = gameState.darkMode
                 ? 'from-gray-900 via-purple-900 to-gray-900'
                 : 'from-indigo-600 via-purple-600 to-pink-600';
 
             app.innerHTML = `
-                <div class="min-h-screen bg-gradient-to-br ${bgGradient} p-4">
+                <div class="game-container bg-gradient-to-br ${bgGradient}">
                     <div class="max-w-7xl mx-auto">
                         <!-- Header -->
-                        <div class="card rounded-2xl shadow-2xl p-6 mb-4">
+                        <div class="card p-6 mb-4">
                             <div class="flex items-center justify-between flex-wrap gap-4">
                                 <div>
                                     <h1 class="text-3xl font-bold" style="color: var(--text-primary)">🎨 Пиксельный Мастер</h1>
@@ -487,7 +940,7 @@
 
                         <div class="grid lg:grid-cols-2 gap-4">
                             <!-- Target -->
-                            <div class="card rounded-2xl shadow-2xl p-6">
+                            <div class="card p-6">
                                 <div class="flex items-center justify-between mb-4">
                                     <h2 class="text-xl font-bold" style="color: var(--text-primary)">🎯 Образец</h2>
                                     <button onclick="toggleTarget()" class="px-4 py-2 rounded-lg hover:opacity-80" style="background-color: var(--border-color); color: var(--text-primary)">
@@ -496,7 +949,7 @@
                                 </div>
                                 ${gameState.showTarget ? `
                                     <div class="flex justify-center">
-                                        <div class="inline-grid gap-0.5 bg-gray-300 p-2 rounded-lg" style="grid-template-columns: repeat(${size}, ${cellSize}px)">
+                                        <div class="grid-container" style="grid-template-columns: repeat(${size}, ${cellSize}px)">
                                             ${gameState.targetGrid.map((row, i) =>
                 row.map((color, j) => `
                                                     <div style="width: ${cellSize}px; height: ${cellSize}px; background-color: ${color};" class="rounded-sm border border-gray-400"></div>
@@ -508,13 +961,13 @@
                             </div>
 
                             <!-- Player Grid -->
-                            <div class="card rounded-2xl shadow-2xl p-6">
+                            <div class="card p-6">
                                 <h2 class="text-xl font-bold mb-4" style="color: var(--text-primary)">🎨 Ваша работа</h2>
                                 <div class="flex justify-center mb-4">
-                                    <div class="inline-grid gap-0.5 bg-gray-300 p-2 rounded-lg" style="grid-template-columns: repeat(${size}, ${cellSize}px)">
+                                    <div class="grid-container" style="grid-template-columns: repeat(${size}, ${cellSize}px)">
                                         ${gameState.grid.map((row, i) =>
                 row.map((color, j) => `
-                                                <div onclick="handleCellClick(${i}, ${j})" style="width: ${cellSize}px; height: ${cellSize}px; background-color: ${color};" class="cell rounded-sm border-2 border-gray-400"></div>
+                                                <div onclick="handleCellClick(${i}, ${j})" style="width: ${cellSize}px; height: ${cellSize}px; background-color: ${color};" class="cell"></div>
                                             `).join('')
             ).join('')}
                                     </div>
@@ -524,7 +977,7 @@
                                 <div class="border-t pt-4" style="border-color: var(--border-color)">
                                     <p class="text-sm font-medium mb-2" style="color: var(--text-primary)">Выберите цвет:</p>
                                     <div class="flex flex-wrap gap-2 justify-center">
-                                        <button onclick="selectColor('#FFFFFF')" class="w-10 h-10 rounded-lg border-4 ${gameState.selectedColor === '#FFFFFF' ? 'border-blue-500 scale-110' : 'border-gray-300'}" style="background-color: #FFFFFF"></button>
+                                        <button onclick="selectColor('${WHITE_COLOR}')" class="w-10 h-10 rounded-lg border-4 ${gameState.selectedColor === WHITE_COLOR ? 'border-blue-500 scale-110' : 'border-gray-300'}" style="background-color: ${WHITE_COLOR}"></button>
                                         ${availableColors.map(color => `
                                             <button onclick="selectColor('${color}')" class="w-10 h-10 rounded-lg border-4 ${gameState.selectedColor === color ? 'border-blue-500 scale-110' : 'border-gray-300'}" style="background-color: ${color}"></button>
                                         `).join('')}
@@ -534,7 +987,7 @@
                         </div>
 
                         <!-- Action Buttons -->
-                        <div class="card rounded-2xl shadow-2xl p-6 mt-4">
+                        <div class="card p-6 mt-4">
                             <div class="flex justify-center gap-4">
                                 <button onclick="resetStage()" class="px-6 py-3 bg-red-500 text-white rounded-xl hover:bg-red-600 font-medium">
                                     ↻ Сбросить
@@ -631,25 +1084,9 @@
     </script>
 
     <!-- Yandex Games SDK -->
-    <script src="https://yandex.ru/games/sdk/v2" onload="initSDK()"></script>
+    <script src="https://yandex.ru/games/sdk/v2"></script>
 
     <script>
-
-        window.nextStage = () => {
-
-            // ⭐ Yandex full-screen reklama
-            if (ysdk) showFullscreenAd();
-
-            if (gameState.currentStage < gameState.totalStages) {
-                gameState.currentStage++;
-            } else {
-                gameState.currentStage = 1;
-                gameState.score = 0;
-            }
-            initStage(gameState.currentStage);
-        };
-
-
         let ysdk = null;
 
         // YANDEX SDK INIT
@@ -666,19 +1103,23 @@
 
         // ADS INIT
         function initAds() {
-            ysdk.adv.getFullscreenAdv();
-            ysdk.adv.getRewardedVideoAdv();
+            if (ysdk && ysdk.adv) {
+                ysdk.adv.getFullscreenAdv();
+                ysdk.adv.getRewardedVideoAdv();
+            }
         }
 
         // FULLSCREEN ADS
         async function showFullscreenAd() {
             try {
-                await ysdk.adv.showFullscreenAdv({
-                    callbacks: {
-                        onClose: () => console.log("Fullscreen closed"),
-                        onError: (err) => console.error("Fullscreen error:", err)
-                    }
-                });
+                if (ysdk && ysdk.adv) {
+                    await ysdk.adv.showFullscreenAdv({
+                        callbacks: {
+                            onClose: () => console.log("Fullscreen closed"),
+                            onError: (err) => console.error("Fullscreen error:", err)
+                        }
+                    });
+                }
             } catch (e) {
                 console.error(e);
             }
@@ -687,22 +1128,40 @@
         // REWARDED VIDEO ADS
         async function showRewardedAd(onReward) {
             try {
-                await ysdk.adv.showRewardedVideo({
-                    callbacks: {
-                        onRewarded: () => {
-                            console.log("Reward given!");
-                            if (onReward) onReward();
-                        },
-                        onError: (err) => console.error("Reward error:", err)
-                    }
-                });
+                if (ysdk && ysdk.adv) {
+                    await ysdk.adv.showRewardedVideo({
+                        callbacks: {
+                            onRewarded: () => {
+                                console.log("Reward given!");
+                                if (onReward) onReward();
+                            },
+                            onError: (err) => console.error("Reward error:", err)
+                        }
+                    });
+                }
             } catch (err) {
                 console.error(err);
             }
         }
+
+        // Yandex SDK yuklanganda ishga tushadi
+        window.addEventListener('load', () => {
+            if (typeof YaGames !== 'undefined') {
+                initSDK();
+            }
+        });
+
+        // Next stage funksiyasini yangilaymiz
+        const originalNextStage = window.nextStage;
+        window.nextStage = () => {
+            // Har 3-bosqichda reklama ko'rsatish
+            if (gameState.currentStage % 3 === 0) {
+                showFullscreenAd();
+            }
+
+            // Asl funksiyani chaqiramiz
+            originalNextStage();
+        };
     </script>
-
-
 </body>
-
 </html>
